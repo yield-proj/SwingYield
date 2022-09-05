@@ -20,6 +20,6 @@ import com.xebisco.yield.Texture;
 
 public class NotCapableTexture extends Texture {
     public NotCapableTexture() {
-        super(null);
+        super((String) null);
     }
 }

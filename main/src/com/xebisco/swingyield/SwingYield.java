@@ -16,6 +16,7 @@
 
 package com.xebisco.swingyield;
 
+import com.xebisco.swingyield.exceptions.NotCapableTextureException;
 import com.xebisco.yield.Color;
 import com.xebisco.yield.*;
 import com.xebisco.yield.config.WindowConfiguration;
@@ -24,7 +25,7 @@ import com.xebisco.yield.exceptions.CannotLoadException;
 import com.xebisco.yield.exceptions.InvalidTextureTypeException;
 import com.xebisco.yield.render.ExceptionThrower;
 import com.xebisco.yield.render.RenderMaster;
-import com.xebisco.swingyield.exceptions.NotCapableTextureException;
+import com.xebisco.yield.render.WindowPrint;
 
 import javax.imageio.ImageIO;
 import javax.sound.sampled.*;
@@ -50,7 +51,7 @@ import java.util.Set;
  * @author Xebisco
  * @since 4-1.2
  */
-public class SwingYield extends Canvas implements RenderMaster, KeyListener, MouseListener, ExceptionThrower {
+public class SwingYield extends Canvas implements RenderMaster, KeyListener, MouseListener, ExceptionThrower, WindowPrint {
 
     private Graphics g;
 
@@ -67,7 +68,6 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
     private AffineTransform defTransform;
 
     private Image image;
-
     private final Set<Integer> pressing = new HashSet<>();
 
     private HashMap<Integer, Image> images = new HashMap<>();
@@ -119,6 +119,17 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
     @Override
     public SampleGraphics initGraphics() {
         return new SwingGraphics();
+    }
+
+    @Override
+    public Texture print(Vector2 pos, Vector2 size) {
+        BufferedImage image1 = new BufferedImage((int) size.x, (int) size.y, BufferedImage.TYPE_INT_ARGB);
+        Graphics g = image1.getGraphics();
+        g.drawImage(image, (int) -(pos.x - size.x / 2f), (int) -(pos.y - size.x / 2f), null);
+        g.dispose();
+        Texture t = new Texture("");
+        loadTexture(t, image1, 0, 0);
+        return t;
     }
 
     public class SwingGraphics implements SampleGraphics {
@@ -274,14 +285,13 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
 
     @Override
     public Texture duplicate(Texture texture) {
-        Texture t = new Texture(null);
+        Texture t = new Texture((String) null);
         t.setVisualUtils(texture.getVisualUtils());
         t.setFilter(texture.getFilter());
         t.setInvertedX(texture.getInvertedX());
         t.setInvertedY(texture.getInvertedY());
         t.setInvertedXY(texture.getInvertedXY());
         t.setInputStream(texture.getInputStream());
-        t.setUrl(texture.getUrl());
         images.put(t.getTextureID(), images.get(texture.getTextureID()));
         return t;
     }
@@ -289,7 +299,7 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
     @Override
     public Texture overlayTexture(Texture tex1, Texture tex2, Vector2 pos1, Vector2 pos2) {
         Image i1 = images.get(tex1.getTextureID()), i2 = images.get(tex2.getTextureID());
-        Texture tex = new Texture(null, tex1.getTextureType());
+        Texture tex = new Texture((String) null, tex1.getTextureType());
         loadTexture(tex, i1, (int) pos1.x, (int) pos1.y);
         Image i3 = images.get(tex.getTextureID());
         Graphics g = i3.getGraphics();
@@ -427,7 +437,7 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
     public void loadAudioClip(AudioClip audioClip, AudioPlayer audioPlayer, MultiThread multiThread, YldB yldB) {
         try {
             Clip clip = clips.get(audioPlayer.getPlayerID());
-            AudioInputStream inputStream = AudioSystem.getAudioInputStream(audioClip.getUrl());
+            AudioInputStream inputStream = AudioSystem.getAudioInputStream(audioClip.getInputStream());
             clip.close();
             if (multiThread == null)
                 clip.open(inputStream);
@@ -529,11 +539,6 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
         Toolkit.getDefaultToolkit().sync();
         last = System.currentTimeMillis();
     }
-/*
-    @Override
-    public void update(Graphics g) {
-        paintComponent(g);
-    }*/
 
     @Override
     public void frameStart(SampleGraphics g, View view) {
@@ -686,14 +691,14 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
         Image img;
         try {
             img = ((BufferedImage) images.get(texture.getTextureID())).getSubimage(x, y, width, height);
-            tex = new Texture(null);
+            tex = new Texture((String) null);
             loadTexture(tex, img, 0, 0);
         } catch (ClassCastException e) {
             img = createVolatileImage(width, height);
             Graphics g = img.getGraphics();
             g.drawImage(images.get(texture.getTextureID()), -x, -y, null);
             g.dispose();
-            tex = new Texture(null, TexType.NATIVE);
+            tex = new Texture((String) null, TexType.NATIVE);
             loadTexture(tex, img, 0, 0);
         }
 
@@ -707,10 +712,10 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
         Texture tex;
         if (img instanceof VolatileImage) {
             image1 = createVolatileImage(width, height);
-            tex = new Texture(null, TexType.NATIVE);
+            tex = new Texture((String) null, TexType.NATIVE);
         } else {
             image1 = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
-            tex = new Texture(null);
+            tex = new Texture((String) null);
         }
         Graphics g = image1.getGraphics();
         g.drawImage(img, 0, 0, width, height, null);
@@ -742,14 +747,14 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
 
     @Override
     public void setTextureColors(Texture texture, Color[][] colors) {
-        try {
+        if(texture.getTextureType() == TexType.SIMULATED) {
             BufferedImage image1 = (BufferedImage) images.get(texture.getTextureID());
             for (int x = 0; x < colors.length; x++) {
                 for (int y = 0; y < colors[0].length; y++) {
                     image1.setRGB(x, y, toAWTColor(colors[x][y]).getRGB());
                 }
             }
-        } catch (ClassCastException e) {
+        } else {
             Image image1 = images.get(texture.getTextureID());
             Graphics g = image1.getGraphics();
             for (int x = 0; x < colors.length; x++) {
@@ -978,5 +983,13 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
 
     public void setActual(long actual) {
         this.actual = actual;
+    }
+
+    public HashMap<Integer, Clip> getClips() {
+        return clips;
+    }
+
+    public void setClips(HashMap<Integer, Clip> clips) {
+        this.clips = clips;
     }
 }

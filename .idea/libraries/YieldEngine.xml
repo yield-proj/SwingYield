@@ -1,7 +1,7 @@
 <component name="libraryTable">
   <library name="YieldEngine">
     <CLASSES>
-      <root url="jar://$PROJECT_DIR$/../YieldEngine/out/artifacts/YieldEngine_jar/YieldEngine.jar!/" />
+      <root url="jar://D:/Development/Intellij/YieldEngine/out/artifacts/YieldEngine_jar/YieldEngine.jar!/" />
     </CLASSES>
     <JAVADOC />
     <SOURCES />
