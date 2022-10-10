@@ -22,7 +22,6 @@ import com.xebisco.yield.*;
 import com.xebisco.yield.config.WindowConfiguration;
 import com.xebisco.yield.exceptions.AudioClipException;
 import com.xebisco.yield.exceptions.CannotLoadException;
-import com.xebisco.yield.exceptions.InvalidTextureTypeException;
 import com.xebisco.yield.render.ExceptionThrower;
 import com.xebisco.yield.render.RenderMaster;
 import com.xebisco.yield.render.WindowPrint;
@@ -59,6 +58,7 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
 
     private JFrame frame;
 
+    public boolean accelerateTextures;
     private double savedRotation;
 
     private final SwingYield swingYield;
@@ -76,6 +76,8 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
 
     private final static BufferedImage yieldImage;
     private float fps;
+
+    private static final GraphicsConfiguration gc = GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice().getDefaultConfiguration();
 
     private long last, actual;
 
@@ -219,9 +221,6 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
 
         @Override
         public void drawTexture(Texture texture, Vector2 pos, Vector2 size) {
-            if (texture instanceof NotCapableTexture) {
-                throw new NotCapableTextureException();
-            }
             Image image = images.get(texture.getTextureID());
             if (pos.x - size.x < view.getWidth() &&
                     pos.x + size.x > 0 &&
@@ -299,7 +298,7 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
     @Override
     public Texture overlayTexture(Texture tex1, Texture tex2, Vector2 pos1, Vector2 pos2) {
         Image i1 = images.get(tex1.getTextureID()), i2 = images.get(tex2.getTextureID());
-        Texture tex = new Texture((String) null, tex1.getTextureType());
+        Texture tex = new Texture((String) null);
         loadTexture(tex, i1, (int) pos1.x, (int) pos1.y);
         Image i3 = images.get(tex.getTextureID());
         Graphics g = i3.getGraphics();
@@ -309,9 +308,6 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
     }
 
     public void drawTexture(Texture texture, Vector2 pos, Vector2 size) {
-        if (texture instanceof NotCapableTexture) {
-            throw new NotCapableTextureException();
-        }
         Image image = images.get(texture.getTextureID());
         g.drawImage(image, (int) (pos.x), (int) (pos.y), (int) size.x, (int) size.y, null);
     }
@@ -335,9 +331,10 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
     @Override
     public void pausePlayer(AudioPlayer audioPlayer) {
         Clip clip = clips.get(audioPlayer.getPlayerID());
-        if (clip.isOpen()) {
-            clip.stop();
-        }
+        if (clip != null)
+            if (clip.isOpen()) {
+                clip.stop();
+            }
     }
 
     @Override
@@ -351,15 +348,16 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
     @Override
     public void setMicrosecondPosition(AudioPlayer audioPlayer, long pos) {
         Clip clip = clips.get(audioPlayer.getPlayerID());
-        if (clip.isOpen()) {
-            clip.setMicrosecondPosition(pos);
-        }
+        if (clip != null)
+            if (clip.isOpen()) {
+                clip.setMicrosecondPosition(pos);
+            }
     }
 
     @Override
     public long getMicrosecondPosition(AudioPlayer audioPlayer) {
         Clip clip = clips.get(audioPlayer.getPlayerID());
-        if (clip.isOpen()) {
+        if (clip != null && clip.isOpen()) {
             return clip.getMicrosecondPosition();
         } else {
             return 0;
@@ -369,7 +367,7 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
     @Override
     public long getMicrosecondLength(AudioPlayer audioPlayer) {
         Clip clip = clips.get(audioPlayer.getPlayerID());
-        if (clip.isOpen()) {
+        if (clip != null && clip.isOpen()) {
             return clip.getMicrosecondLength();
         } else {
             return 0;
@@ -379,7 +377,7 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
     @Override
     public float getVolume(AudioPlayer audioPlayer) {
         Clip clip = clips.get(audioPlayer.getPlayerID());
-        if (clip.isOpen()) {
+        if (clip != null && clip.isOpen()) {
             FloatControl gainControl = (FloatControl) clip.getControl(FloatControl.Type.MASTER_GAIN);
             return (float) Math.pow(10f, gainControl.getValue() / 20f);
         } else return 0;
@@ -388,19 +386,35 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
     @Override
     public void setVolume(AudioPlayer audioPlayer, float value) {
         Clip clip = clips.get(audioPlayer.getPlayerID());
-        if (clip.isOpen()) {
+        if (clip != null && clip.isOpen()) {
             FloatControl gainControl = (FloatControl) clip.getControl(FloatControl.Type.MASTER_GAIN);
             gainControl.setValue(20f * (float) Math.log10(value));
         }
     }
 
     @Override
-    public void flushPlayer(AudioPlayer audioPlayer) {
+    public void unloadPlayer(AudioPlayer audioPlayer) {
         Clip clip = clips.get(audioPlayer.getPlayerID());
-        if(clip.isOpen()) {
+        if (clip != null && clip.isOpen()) {
             clip.close();
+            clip.flush();
             clips.remove(audioPlayer.getPlayerID());
         }
+    }
+
+    @Override
+    public void unloadAllPlayers() {
+        for (Clip clip : clips.values()) {
+            Yld.debug(() -> Yld.log("Flushed: " + clip));
+            if (clip != null) {
+                if (clip.isOpen()) {
+                    clip.close();
+                    clip.flush();
+                }
+            }
+        }
+        while (!clips.isEmpty())
+            clips.clear();
     }
 
     @Override
@@ -449,7 +463,7 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
                         Yld.throwException(e);
                     }
                 }, multiThread);
-            if(audioClip.isFlushAfterLoad())
+            if (audioClip.isFlushAfterLoad())
                 audioClip.flush();
         } catch (IOException | UnsupportedAudioFileException | LineUnavailableException e) {
             Yld.throwException(e);
@@ -460,34 +474,9 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
 
     @Override
     public SampleWindow initWindow(WindowConfiguration configuration) {
-        renderMod = configuration.renderMod;
-        Toolkit.getDefaultToolkit().setDynamicLayout(false);
-        frame = new JFrame();
-        frame.setSize(configuration.width, configuration.height);
-        frame.setResizable(configuration.resizable);
-        frame.setAlwaysOnTop(configuration.alwaysOnTop);
-        frame.setTitle(configuration.title);
-        frame.setUndecorated(configuration.undecorated);
-        frame.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
-        frame.add(this);
-        if (configuration.fullscreen) {
-            frame.setExtendedState(JFrame.MAXIMIZED_BOTH);
-            frame.setUndecorated(true);
-            frame.setAlwaysOnTop(true);
-        }
-        frame.setVisible(true);
-        if (!configuration.fullscreen) {
-            frame.setSize(configuration.width + frame.getInsets().right + frame.getInsets().left, configuration.height + frame.getInsets().top + frame.getInsets().bottom);
-        }
-        frame.setLocationRelativeTo(null);
-        addKeyListener(this);
-        addMouseListener(this);
-        if (configuration.hideMouse) {
-            Cursor cursor = Toolkit.getDefaultToolkit().createCustomCursor(new ImageIcon(Objects.requireNonNull(Yld.class.getResource("assets/none.png"))).getImage(), new Point(), "none");
-            frame.setCursor(cursor);
-        }
-        changeWindowIcon(configuration.icon);
-        render();
+        SampleWindow sampleWindow = sampleWindow(configuration);
+        addPanel();
+        showWindow(configuration);
         /*if (Yld.debug) {
             try {
                 Thread.sleep(600);
@@ -508,12 +497,93 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
         };
     }
 
-    public void render() {
-        if (getBufferStrategy() == null) {
-            createBufferStrategy(3);
+    public void addPanel() {
+        frame.add(this);
+    }
+
+    public SampleWindow sampleWindow(WindowConfiguration configuration) {
+        renderMod = configuration.renderMod;
+        Toolkit.getDefaultToolkit().setDynamicLayout(false);
+        frame = new JFrame();
+        frame.setSize(configuration.width, configuration.height);
+        frame.setResizable(configuration.resizable);
+        frame.setAlwaysOnTop(configuration.alwaysOnTop);
+        frame.setTitle(configuration.title);
+        frame.setUndecorated(configuration.undecorated);
+        frame.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
+        return new SampleWindow() {
+            @Override
+            public int getWidth() {
+                return frame.getWidth();
+            }
+
+            @Override
+            public int getHeight() {
+                return frame.getHeight();
+            }
+        };
+    }
+
+    public void showWindow(WindowConfiguration configuration) {
+        if (configuration.fullscreen) {
+            frame.setExtendedState(JFrame.MAXIMIZED_BOTH);
+            frame.setUndecorated(true);
+            frame.setAlwaysOnTop(true);
         }
+        frame.setVisible(true);
+        if (!configuration.fullscreen) {
+            frame.setSize(configuration.width + frame.getInsets().right + frame.getInsets().left, configuration.height + frame.getInsets().top + frame.getInsets().bottom);
+        }
+        frame.setLocationRelativeTo(null);
+        addKeyListener(this);
+        addMouseListener(this);
+        if (configuration.hideMouse) {
+            Cursor cursor = Toolkit.getDefaultToolkit().createCustomCursor(new ImageIcon(Objects.requireNonNull(Yld.class.getResource("assets/none.png"))).getImage(), new Point(), "none");
+            frame.setCursor(cursor);
+        }
+        changeWindowIcon(configuration.icon);
+    }
+
+    /* @Override
+     protected void paintComponent(Graphics g) {
+         actual = System.currentTimeMillis();
+         fps = 1000 / (float) (actual - last);
+         g.setColor(java.awt.Color.BLACK);
+         int w = frame.getWidth() - frame.getInsets().right - frame.getInsets().left,
+                 h = frame.getHeight() - frame.getInsets().top - frame.getInsets().bottom;
+         g.fillRect(0, 0, w, h);
+         if (view != null) {
+             started = true;
+             Graphics2D g2 = (Graphics2D) g;
+             g2.rotate(Math.toRadians(view.getTransform().rotation) * -1, w / 2f, h / 2f);
+             float vsx = view.getTransform().scale.x, vpx = view.getPosition().x, vsy = view.getTransform().scale.y, vpy = view.getPosition().y;
+             try {
+                 g.drawImage(image, (int) (w / 2 - w * vsx / 2 + vpx), (int) (h / 2 - h * vsy / 2 + vpy), (int) (w * vsx), (int) (h * vsy), null);
+             } catch (NullPointerException ignore) {
+             }
+         }
+         if(!started) {
+             g.setColor(java.awt.Color.WHITE);
+             g.fillRect(0, 0, w, h);
+             g.drawImage(yieldImage, getWidth() / 2 - yieldImage.getWidth() / 2, getHeight() / 2 - yieldImage.getHeight() / 2, null);
+         }
+         g.dispose();
+         Toolkit.getDefaultToolkit().sync();
+         last = System.currentTimeMillis();
+         rendering = false;
+     }*/
+    public void render() {
         BufferStrategy bs = getBufferStrategy();
-        Graphics g = bs.getDrawGraphics();
+        if (bs == null) {
+            try {
+                createBufferStrategy(2, GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice().getDefaultConfiguration().getBufferCapabilities());
+                return;
+            } catch (AWTException e) {
+                Yld.throwException(e);
+            }
+        }
+        assert bs != null;
+        Graphics2D g = (Graphics2D) bs.getDrawGraphics();
         actual = System.currentTimeMillis();
         fps = 1000 / (float) (actual - last);
         g.setColor(java.awt.Color.BLACK);
@@ -521,12 +591,13 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
                 h = frame.getHeight() - frame.getInsets().top - frame.getInsets().bottom;
         g.fillRect(0, 0, w, h);
         if (view != null) {
-            if (defTransform == null)
-                defTransform = ((Graphics2D) g).getTransform();
             started = true;
-            Graphics2D g2 = (Graphics2D) g;
-            g2.rotate(Math.toRadians(view.getTransform().rotation) * -1, w / 2f, h / 2f);
-            g.drawImage(image, (int) (w / 2 - w * view.getTransform().scale.x / 2 + view.getPosition().x), (int) (h / 2 - h * view.getTransform().scale.y / 2 + view.getPosition().y), (int) (w * view.getTransform().scale.x), (int) (h * view.getTransform().scale.y), null);
+            g.rotate(Math.toRadians(view.getTransform().rotation) * -1, w / 2f, h / 2f);
+            float vsx = view.getTransform().scale.x, vpx = view.getPosition().x, vsy = view.getTransform().scale.y, vpy = view.getPosition().y;
+            try {
+                g.drawImage(image, (int) (w / 2 - w * vsx / 2 + vpx), (int) (h / 2 - h * vsy / 2 + vpy), (int) (w * vsx), (int) (h * vsy), null);
+            } catch (NullPointerException ignore) {
+            }
         }
        /* if(!started) {
             g.setColor(java.awt.Color.WHITE);
@@ -535,17 +606,21 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
         }*/
         g.dispose();
         bs.show();
-        requestFocus();
         Toolkit.getDefaultToolkit().sync();
         last = System.currentTimeMillis();
     }
 
     @Override
-    public void frameStart(SampleGraphics g, View view) {
-        this.view = view;
+    public void frameStart(SampleGraphics g) {
         intFrame++;
+        reloadGraphics();
+    }
+
+    public void reloadGraphics() {
         if (image != null) {
             this.g = image.getGraphics();
+            if (defTransform == null)
+                defTransform = ((Graphics2D) this.g).getTransform();
             this.g.setColor(toAWTColor(view.getBgColor()));
             this.g.fillRect(0, 0, view.getWidth(), view.getHeight());
         }
@@ -554,21 +629,35 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
     private int intFrame;
 
     @Override
-    public void frameEnd() {
+    public void frameEnd(View view) {
+        this.view = view;
+        Yld.debug(() -> {
+            if (!frame.getTitle().endsWith(" (DEBUG)"))
+                frame.setTitle(frame.getTitle() + " (DEBUG)");
+        });
+        Yld.release(() -> {
+            if (frame.getTitle().endsWith(" (DEBUG)"))
+                frame.setTitle(frame.getTitle().substring(0, " (DEBUG)".length()));
+        });
         if (g != null)
             g.dispose();
-        if (image == null || image.getWidth(null) != view.getWidth() || image.getHeight(null) != view.getHeight()) {
-            image = createVolatileImage(view.getWidth(), view.getHeight());
-            Graphics gi = image.getGraphics();
-            gi.setColor(java.awt.Color.BLACK);
-            gi.fillRect(0, 0, image.getWidth(null), image.getHeight(null));
-            gi.dispose();
-            //image = new BufferedImage(view.getWidth(), view.getHeight(), BufferedImage.TYPE_INT_ARGB);
-        }
-        if (intFrame % renderMod == 0)
+        if (intFrame % renderMod == 0) {
             render();
-       /* if (intFrame % renderMod == 0)
-            SwingUtilities.invokeLater(this::repaint);*/
+        }
+    }
+
+    @Override
+    public void onResize(int width, int height) {
+        if (image != null)
+            image.flush();
+        image = gc.createCompatibleImage(width, height, Transparency.TRANSLUCENT);
+        image.setAccelerationPriority(1);
+        Graphics gi = image.getGraphics();
+        gi.setColor(java.awt.Color.BLACK);
+        gi.fillRect(0, 0, image.getWidth(null), image.getHeight(null));
+        gi.dispose();
+        reloadGraphics();
+        //image = new BufferedImage(view.getWidth(), view.getHeight(), BufferedImage.TYPE_INT_ARGB);
     }
 
     @Override
@@ -595,79 +684,88 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
     }
 
     public void loadTexture(Texture texture, Image img, int ix, int iy) {
-        Image image;
-        if (texture.getTextureType() == TexType.NATIVE) {
-            image = createVolatileImage(img.getWidth(null), img.getHeight(null));
-            Graphics g = image.getGraphics();
-            g.drawImage(img, ix, iy, null);
-            g.dispose();
-        } else if (texture.getTextureType() == TexType.SIMULATED) {
-            image = new BufferedImage(img.getWidth(null), img.getHeight(null), BufferedImage.TYPE_INT_ARGB);
-            Graphics g = image.getGraphics();
-            g.drawImage(img, ix, iy, null);
-            g.dispose();
-            BufferedImage buffImage = (BufferedImage) image;
-            BufferedImage imageX = new BufferedImage(image.getWidth(null), image.getHeight(null), BufferedImage.TYPE_INT_ARGB),
-                    imageY = new BufferedImage(image.getWidth(null), image.getHeight(null), BufferedImage.TYPE_INT_ARGB),
-                    imageXY = new BufferedImage(image.getWidth(null), image.getHeight(null), BufferedImage.TYPE_INT_ARGB);
-            for (int y = 0; y < image.getHeight(null); y++) {
-                for (int x = 0; x < image.getWidth(null); x++) {
-                    imageX.setRGB((image.getWidth(null) - 1) - x, y, buffImage.getRGB(x, y));
-                    imageY.setRGB(x, (image.getHeight(null) - 1) - y, buffImage.getRGB(x, y));
-                    imageXY.setRGB((image.getWidth(null) - 1) - x, (image.getHeight(null) - 1) - y, buffImage.getRGB(x, y));
-                }
-            }
-            Texture invX = new Texture(""), invY = new Texture(""), invXY = new Texture("");
-            images.put(invX.getTextureID(), imageX);
-            images.put(invY.getTextureID(), imageY);
-            images.put(invXY.getTextureID(), imageXY);
-            invX.setVisualUtils(this);
-            invY.setVisualUtils(this);
-            invXY.setVisualUtils(this);
-            texture.setInvertedX(invX);
-            texture.setInvertedY(invY);
-            texture.setInvertedXY(invXY);
+        Image image, imageX, imageY, imageXY;
+        int width = img.getWidth(null), height = img.getHeight(null);
+        if (accelerateTextures) {
+            image = gc.createCompatibleVolatileImage(width, height, Transparency.TRANSLUCENT);
+            imageX = gc.createCompatibleVolatileImage(width, height, Transparency.TRANSLUCENT);
+            imageY = gc.createCompatibleVolatileImage(width, height, Transparency.TRANSLUCENT);
+            imageXY = gc.createCompatibleVolatileImage(width, height, Transparency.TRANSLUCENT);
         } else {
-            throw new InvalidTextureTypeException(texture.getTextureType().toString());
+            image = gc.createCompatibleImage(width, height, Transparency.TRANSLUCENT);
+            imageX = gc.createCompatibleImage(width, height, Transparency.TRANSLUCENT);
+            imageY = gc.createCompatibleImage(width, height, Transparency.TRANSLUCENT);
+            imageXY = gc.createCompatibleImage(width, height, Transparency.TRANSLUCENT);
         }
+        image.setAccelerationPriority(1);
+        imageX.setAccelerationPriority(1);
+        imageY.setAccelerationPriority(1);
+        imageXY.setAccelerationPriority(1);
+        Graphics g = image.getGraphics();
+        g.drawImage(img, ix, iy, this);
+        g.dispose();
+        img.flush();
+        Graphics xg = imageX.getGraphics();
+        xg.drawImage(image, width, 0, -width, height, this);
+        xg.dispose();
+        Graphics yg = imageY.getGraphics();
+        yg.drawImage(image, 0, height, width, -height, this);
+        yg.dispose();
+        Graphics xyg = imageXY.getGraphics();
+        xyg.drawImage(image, width, height, -width, -height, this);
+        xyg.dispose();
+        Texture invX = new Texture(""), invY = new Texture(""), invXY = new Texture("");
+        images.put(invX.getTextureID(), imageX);
+        images.put(invY.getTextureID(), imageY);
+        images.put(invXY.getTextureID(), imageXY);
+        invX.setVisualUtils(this);
+        invY.setVisualUtils(this);
+        invXY.setVisualUtils(this);
+        texture.setInvertedX(invX);
+        texture.setInvertedY(invY);
+        texture.setInvertedXY(invXY);
         images.put(texture.getTextureID(), image);
-        if (texture.getInvertedX() == null)
-            texture.setInvertedX(new NotCapableTexture());
-        if (texture.getInvertedY() == null)
-            texture.setInvertedY(new NotCapableTexture());
-        if (texture.getInvertedXY() == null)
-            texture.setInvertedXY(new NotCapableTexture());
         texture.setVisualUtils(this);
-        if(texture.isFlushAfterLoad())
+        if (texture.isFlushAfterLoad())
             texture.flush();
     }
 
     @Override
     public void setPixel(Texture texture, Color color, Vector2 position) {
-        try {
-            ((BufferedImage) images.get(texture.getTextureID())).setRGB((int) position.x, (int) position.y, toAWTColor(color).getRGB());
-        } catch (ArrayIndexOutOfBoundsException ignore) {
+        Image i = images.get(texture.getTextureID());
+        if (i instanceof BufferedImage) {
+            BufferedImage img = (BufferedImage) i;
+            try {
+                img.setRGB((int) position.x, (int) position.y, toAWTColor(color).getRGB());
+            } catch (ArrayIndexOutOfBoundsException ignore) {
+            }
+        } else {
+            throw new NotCapableTextureException();
         }
     }
 
     @Override
     public void unloadTexture(Texture texture) {
+        images.get(texture.getTextureID()).flush();
         images.remove(texture.getTextureID());
     }
 
     @Override
     public void unloadAllTextures() {
+        for (Image img : images.values()) {
+            if (img != null)
+                img.flush();
+        }
         while (!images.isEmpty())
             images.clear();
-
     }
 
     @Override
     public void clearTexture(Texture texture) {
-        if (texture.getTextureType() == TexType.SIMULATED) {
-            images.replace(texture.getTextureID(), new BufferedImage(texture.getWidth(), texture.getHeight(), BufferedImage.TYPE_INT_ARGB));
+        if (accelerateTextures) {
+            images.replace(texture.getTextureID(), gc.createCompatibleImage(texture.getWidth(), texture.getHeight(), Transparency.TRANSLUCENT));
         } else {
-            images.replace(texture.getTextureID(), createVolatileImage(texture.getWidth(), texture.getHeight()));
+            images.replace(texture.getTextureID(), new BufferedImage(texture.getWidth(), texture.getHeight(), BufferedImage.TYPE_INT_ARGB));
         }
     }
 
@@ -688,82 +786,59 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
     @Override
     public Texture cutTexture(Texture texture, int x, int y, int width, int height) {
         Texture tex;
-        Image img;
-        try {
-            img = ((BufferedImage) images.get(texture.getTextureID())).getSubimage(x, y, width, height);
-            tex = new Texture((String) null);
-            loadTexture(tex, img, 0, 0);
-        } catch (ClassCastException e) {
-            img = createVolatileImage(width, height);
+        Image img = images.get(texture.getTextureID());
+        if (img instanceof BufferedImage) {
+            img = ((BufferedImage) img).getSubimage(x, y, width, height);
+        } else {
+            img = gc.createCompatibleVolatileImage(width, height, Transparency.TRANSLUCENT);
             Graphics g = img.getGraphics();
             g.drawImage(images.get(texture.getTextureID()), -x, -y, null);
             g.dispose();
-            tex = new Texture((String) null, TexType.NATIVE);
-            loadTexture(tex, img, 0, 0);
         }
-
+        tex = new Texture((String) null);
+        loadTexture(tex, img, 0, 0);
         return tex;
     }
 
     @Override
     public Texture scaleTexture(Texture texture, int width, int height) {
-        Image img = images.get(texture.getTextureID());
-        Image image1;
-        Texture tex;
-        if (img instanceof VolatileImage) {
-            image1 = createVolatileImage(width, height);
-            tex = new Texture((String) null, TexType.NATIVE);
-        } else {
-            image1 = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
-            tex = new Texture((String) null);
-        }
-        Graphics g = image1.getGraphics();
-        g.drawImage(img, 0, 0, width, height, null);
-        g.dispose();
-        loadTexture(tex, image1, 0, 0);
+        Texture tex = new Texture((String) null);
+        loadTexture(tex, images.get(tex.getTextureID()).getScaledInstance(width, height, Image.SCALE_DEFAULT), 0, 0);
         return tex;
     }
 
     @Override
     public Color[][] getTextureColors(Texture texture) {
-        BufferedImage image1;
-        try {
-            image1 = (BufferedImage) images.get(texture.getTextureID());
-        } catch (ClassCastException e) {
-            image1 = new BufferedImage(texture.getWidth(), texture.getHeight(), BufferedImage.TYPE_INT_ARGB);
-            Graphics g = image1.getGraphics();
-            g.drawImage(images.get(texture.getTextureID()), 0, 0, null);
-            g.dispose();
-        }
-        Color[][] pixels = new Color[image1.getWidth()][image1.getHeight()];
-        for (int x = 0; x < pixels.length; x++) {
-            for (int y = 0; y < pixels[0].length; y++) {
-                int p = image1.getRGB(x, y);
-                pixels[x][y] = (new Color(((p >> 16) & 0xff) / 255f, ((p >> 8) & 0xff) / 255f, (p & 0xff) / 255f, ((p >> 24) & 0xff) / 255f));
+
+        Image image1 = images.get(texture.getTextureID());
+        if (image1 instanceof BufferedImage) {
+            BufferedImage image2 = (BufferedImage) image1;
+            Color[][] pixels = new Color[image2.getWidth()][image2.getHeight()];
+            for (int x = 0; x < pixels.length; x++) {
+                for (int y = 0; y < pixels[0].length; y++) {
+                    int p = image2.getRGB(x, y);
+                    pixels[x][y] = (new Color(((p >> 16) & 0xff) / 255f, ((p >> 8) & 0xff) / 255f, (p & 0xff) / 255f, ((p >> 24) & 0xff) / 255f));
+                }
             }
+            image1.flush();
+            return pixels;
+        } else {
+            throw new NotCapableTextureException();
         }
-        return pixels;
     }
 
     @Override
     public void setTextureColors(Texture texture, Color[][] colors) {
-        if(texture.getTextureType() == TexType.SIMULATED) {
-            BufferedImage image1 = (BufferedImage) images.get(texture.getTextureID());
+        Image image1 = images.get(texture.getTextureID());
+        if (image1 instanceof BufferedImage) {
+            BufferedImage img = (BufferedImage) image1;
             for (int x = 0; x < colors.length; x++) {
                 for (int y = 0; y < colors[0].length; y++) {
-                    image1.setRGB(x, y, toAWTColor(colors[x][y]).getRGB());
+                    img.setRGB(x, y, toAWTColor(colors[x][y]).getRGB());
                 }
             }
         } else {
-            Image image1 = images.get(texture.getTextureID());
-            Graphics g = image1.getGraphics();
-            for (int x = 0; x < colors.length; x++) {
-                for (int y = 0; y < colors[0].length; y++) {
-                    g.setColor(toAWTColor(colors[x][y]));
-                    g.drawRect(x, y, 1, 1);
-                }
-            }
-            g.dispose();
+            throw new NotCapableTextureException();
         }
     }
 
@@ -991,5 +1066,13 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
 
     public void setClips(HashMap<Integer, Clip> clips) {
         this.clips = clips;
+    }
+
+    public boolean isAccelerateTextures() {
+        return accelerateTextures;
+    }
+
+    public void setAccelerateTextures(boolean accelerateTextures) {
+        this.accelerateTextures = accelerateTextures;
     }
 }
