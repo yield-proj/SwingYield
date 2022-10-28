@@ -22,9 +22,7 @@ import com.xebisco.yield.*;
 import com.xebisco.yield.config.WindowConfiguration;
 import com.xebisco.yield.exceptions.AudioClipException;
 import com.xebisco.yield.exceptions.CannotLoadException;
-import com.xebisco.yield.render.ExceptionThrower;
-import com.xebisco.yield.render.RenderMaster;
-import com.xebisco.yield.render.WindowPrint;
+import com.xebisco.yield.render.*;
 
 import javax.imageio.ImageIO;
 import javax.sound.sampled.*;
@@ -34,72 +32,48 @@ import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseListener;
+import java.awt.font.FontRenderContext;
 import java.awt.geom.AffineTransform;
-import java.awt.image.BufferStrategy;
 import java.awt.image.BufferedImage;
-import java.awt.image.VolatileImage;
 import java.io.IOException;
 import java.io.InputStream;
-import java.lang.reflect.InvocationTargetException;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 
 /**
  * @author Xebisco
  * @since 4-1.2
  */
-public class SwingYield extends Canvas implements RenderMaster, KeyListener, MouseListener, ExceptionThrower, WindowPrint {
+public class SwingYield extends JPanel implements RenderMaster, KeyListener, MouseListener, ExceptionThrower, WindowPrint {
 
     private Graphics g;
-
-    private boolean started;
 
     private JFrame frame;
 
     public boolean accelerateTextures;
+
+    private TreeSet<Renderable> renderables;
     private double savedRotation;
 
     private final SwingYield swingYield;
 
-    private Vector2 savedRotationPoint = new Vector2();
+    private YldTask threadTask;
 
-    private AffineTransform defTransform;
+    private Vector2 savedRotationPoint = new Vector2();
 
     private Image image;
     private final Set<Integer> pressing = new HashSet<>();
-
-    private HashMap<Integer, Image> images = new HashMap<>();
     private HashMap<Integer, Clip> clips = new HashMap<>();
     private HashMap<String, Font> fonts = new HashMap<>();
-
-    private final static BufferedImage yieldImage;
     private float fps;
 
     private static final GraphicsConfiguration gc = GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice().getDefaultConfiguration();
-
     private long last, actual;
-
-    static {
-        BufferedImage yieldImage1 = null;
-        try {
-            yieldImage1 = ImageIO.read(Objects.requireNonNull(Yld.class.getResourceAsStream("assets/yieldlogo.png")));
-        } catch (IOException e) {
-            Yld.throwException(e);
-            System.exit(1);
-        } catch (NullPointerException e) {
-            Yld.throwException(new CannotLoadException("Could not find yield image"));
-            System.exit(1);
-        }
-        yieldImage = yieldImage1;
-    }
+    private AffineTransform affinetransform = new AffineTransform();
+    private FontRenderContext frc = new FontRenderContext(affinetransform,true,true);
 
     public SwingYield() {
         swingYield = this;
     }
-
-    private View view;
 
     public static java.awt.Color toAWTColor(Color color) {
         return new java.awt.Color(color.getR(), color.getG(), color.getB(), color.getA());
@@ -109,18 +83,13 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
         return new Color(color.getRed() / 255f, color.getGreen() / 255f, color.getBlue() / 255f, color.getAlpha() / 255f);
     }
 
-    @Override
-    public void before(YldGame game) {
-
-    }
-
     public void rotate(Vector2 point, Float angle) {
         ((Graphics2D) g).rotate(Math.toRadians(-angle), point.x, point.y);
     }
 
     @Override
-    public SampleGraphics initGraphics() {
-        return new SwingGraphics();
+    public void start(TreeSet<Renderable> renderables) {
+        this.renderables = renderables;
     }
 
     @Override
@@ -134,7 +103,7 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
         return t;
     }
 
-    public class SwingGraphics implements SampleGraphics {
+    /*public class SwingGraphics implements SampleGraphics {
         @Override
         public void setRotation(Vector2 point, float angle) {
             ((Graphics2D) g).setTransform(defTransform);
@@ -275,49 +244,36 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
                 throw new RuntimeException(e);
             }
         }
-    }
-
-    @Override
-    public SampleGraphics specificGraphics() {
-        return null;
-    }
+    }*/
 
     @Override
     public Texture duplicate(Texture texture) {
-        Texture t = new Texture((String) null);
-        t.setVisualUtils(texture.getVisualUtils());
-        t.setFilter(texture.getFilter());
-        t.setInvertedX(texture.getInvertedX());
-        t.setInvertedY(texture.getInvertedY());
-        t.setInvertedXY(texture.getInvertedXY());
-        t.setInputStream(texture.getInputStream());
-        images.put(t.getTextureID(), images.get(texture.getTextureID()));
+        Texture t = new Texture(texture.getCachedPath());
+        Image img = (Image) texture.getSpecificImage();
+        loadTexture(t, img.getScaledInstance(img.getWidth(null), img.getHeight(null), Image.SCALE_DEFAULT), 0, 0);
         return t;
     }
 
     @Override
     public Texture overlayTexture(Texture tex1, Texture tex2, Vector2 pos1, Vector2 pos2) {
-        Image i1 = images.get(tex1.getTextureID()), i2 = images.get(tex2.getTextureID());
+        Image i1 = (Image) tex1.getSpecificImage(), i2 = (Image) tex2.getSpecificImage();
         Texture tex = new Texture((String) null);
         loadTexture(tex, i1, (int) pos1.x, (int) pos1.y);
-        Image i3 = images.get(tex.getTextureID());
-        Graphics g = i3.getGraphics();
+        Graphics g = ((Image) tex.getSpecificImage()).getGraphics();
         g.drawImage(i2, (int) pos2.x, (int) pos2.y, null);
         g.dispose();
         return tex;
     }
 
     public void drawTexture(Texture texture, Vector2 pos, Vector2 size) {
-        Image image = images.get(texture.getTextureID());
+        Image image = (Image) texture.getSpecificImage();
         g.drawImage(image, (int) (pos.x), (int) (pos.y), (int) size.x, (int) size.y, null);
     }
 
     public void changeWindowIcon(Texture icon) {
-        Image i = images.get(icon.getTextureID());
+        Image i = (Image) icon.getSpecificImage();
         frame.setIconImage(i);
     }
-
-    private float renderMod;
 
     @Override
     public void loadAudioPlayer(AudioPlayer player) {
@@ -448,21 +404,12 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
     }
 
     @Override
-    public void loadAudioClip(AudioClip audioClip, AudioPlayer audioPlayer, MultiThread multiThread, YldB yldB) {
+    public void loadAudioClip(AudioClip audioClip, AudioPlayer audioPlayer) {
         try {
             Clip clip = clips.get(audioPlayer.getPlayerID());
             AudioInputStream inputStream = AudioSystem.getAudioInputStream(audioClip.getInputStream());
             clip.close();
-            if (multiThread == null)
-                clip.open(inputStream);
-            else
-                yldB.concurrent(() -> {
-                    try {
-                        clip.open(inputStream);
-                    } catch (LineUnavailableException | IOException e) {
-                        Yld.throwException(e);
-                    }
-                }, multiThread);
+            clip.open(inputStream);
             if (audioClip.isFlushAfterLoad())
                 audioClip.flush();
         } catch (IOException | UnsupportedAudioFileException | LineUnavailableException e) {
@@ -484,17 +431,7 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
                 throw new RuntimeException(e);
             }
         }*/
-        return new SampleWindow() {
-            @Override
-            public int getWidth() {
-                return frame.getWidth();
-            }
-
-            @Override
-            public int getHeight() {
-                return frame.getHeight();
-            }
-        };
+        return sampleWindow;
     }
 
     public void addPanel() {
@@ -502,7 +439,6 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
     }
 
     public SampleWindow sampleWindow(WindowConfiguration configuration) {
-        renderMod = configuration.renderMod;
         Toolkit.getDefaultToolkit().setDynamicLayout(false);
         frame = new JFrame();
         frame.setSize(configuration.width, configuration.height);
@@ -536,7 +472,7 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
         }
         frame.setLocationRelativeTo(null);
         addKeyListener(this);
-        addMouseListener(this);
+        // addMouseListener(this);
         if (configuration.hideMouse) {
             Cursor cursor = Toolkit.getDefaultToolkit().createCustomCursor(new ImageIcon(Objects.requireNonNull(Yld.class.getResource("assets/none.png"))).getImage(), new Point(), "none");
             frame.setCursor(cursor);
@@ -544,35 +480,83 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
         changeWindowIcon(configuration.icon);
     }
 
-    /* @Override
-     protected void paintComponent(Graphics g) {
-         actual = System.currentTimeMillis();
-         fps = 1000 / (float) (actual - last);
-         g.setColor(java.awt.Color.BLACK);
-         int w = frame.getWidth() - frame.getInsets().right - frame.getInsets().left,
-                 h = frame.getHeight() - frame.getInsets().top - frame.getInsets().bottom;
-         g.fillRect(0, 0, w, h);
-         if (view != null) {
-             started = true;
-             Graphics2D g2 = (Graphics2D) g;
-             g2.rotate(Math.toRadians(view.getTransform().rotation) * -1, w / 2f, h / 2f);
-             float vsx = view.getTransform().scale.x, vpx = view.getPosition().x, vsy = view.getTransform().scale.y, vpy = view.getPosition().y;
-             try {
-                 g.drawImage(image, (int) (w / 2 - w * vsx / 2 + vpx), (int) (h / 2 - h * vsy / 2 + vpy), (int) (w * vsx), (int) (h * vsy), null);
-             } catch (NullPointerException ignore) {
-             }
-         }
-         if(!started) {
+    int x;
+
+    @Override
+    protected void paintComponent(Graphics g) {
+        x++;
+        actual = System.currentTimeMillis();
+        fps = 1000 / (float) (actual - last);
+        g.setColor(java.awt.Color.BLACK);
+        int w = frame.getWidth() - frame.getInsets().right - frame.getInsets().left,
+                h = frame.getHeight() - frame.getInsets().top - frame.getInsets().bottom;
+        g.fillRect(0, 0, w, h);
+        if (image != null) {
+            Yld.log(renderables.size());
+            Graphics2D g2 = (Graphics2D) image.getGraphics();
+            for (Renderable renderable : renderables) {
+                if (renderable.getType() != RenderableType.IMAGE) {
+                    if (renderable.getSpecificColor() == null)
+                        renderable.setSpecificColor(toAWTColor(renderable.getColor()));
+                    g2.setColor((java.awt.Color) renderable.getSpecificColor());
+                }
+                g2.rotate(Math.toRadians(-renderable.getRotation()), renderable.getX(), renderable.getY());
+                switch (renderable.getType()) {
+                    case LINE:
+                        g2.setStroke(new BasicStroke(renderable.getThickness()));
+                        g2.drawLine(renderable.getX() - renderable.getWidth() / 2, renderable.getY() - renderable.getHeight() / 2, renderable.getX() + renderable.getWidth() / 2, renderable.getY() + renderable.getHeight() / 2);
+                        break;
+                    case RECTANGLE:
+                        if (renderable.isFilled())
+                            g2.fillRect(renderable.getX() - renderable.getWidth() / 2, renderable.getY() - renderable.getHeight() / 2, renderable.getWidth(), renderable.getHeight());
+                        else {
+                            g2.setStroke(new BasicStroke(renderable.getThickness()));
+                            g2.drawRect(renderable.getX() - renderable.getWidth() / 2, renderable.getY() - renderable.getHeight() / 2, renderable.getWidth(), renderable.getHeight());
+                        }
+                        break;
+                    case OVAL:
+                        if (renderable.isFilled())
+                            g2.fillOval(renderable.getX() - renderable.getWidth() / 2, renderable.getY() - renderable.getHeight() / 2, renderable.getWidth(), renderable.getHeight());
+                        else {
+                            g2.setStroke(new BasicStroke(renderable.getThickness()));
+                            g2.drawRect(renderable.getX() - renderable.getWidth() / 2, renderable.getY() - renderable.getHeight() / 2, renderable.getWidth(), renderable.getHeight());
+                        }
+                        break;
+                    case ROUNDED_RECTANGLE:
+                        if (renderable.isFilled())
+                            g2.fillRoundRect(renderable.getX() - renderable.getWidth() / 2, renderable.getY() - renderable.getHeight() / 2, renderable.getWidth(), renderable.getHeight(), renderable.getArcWidth(), renderable.getArcHeight());
+                        else {
+                            g2.setStroke(new BasicStroke(renderable.getThickness()));
+                            g2.drawRoundRect(renderable.getX() - renderable.getWidth() / 2, renderable.getY() - renderable.getHeight() / 2, renderable.getWidth(), renderable.getHeight(), renderable.getArcWidth(), renderable.getArcHeight());
+                        }
+                        break;
+                    case IMAGE:
+                        g2.drawImage((Image) renderable.getSpecific(), renderable.getX() - renderable.getWidth() / 2, renderable.getY() - renderable.getHeight() / 2, renderable.getWidth(), renderable.getHeight(), null);
+                        break;
+                }
+            }
+            g2.dispose();
+            //g2.rotate(Math.toRadians(view.getTransform().rotation) * -1, w / 2f, h / 2f);
+            //float vsx = view.getTransform().scale.x, vpx = view.getPosition().x, vsy = view.getTransform().scale.y, vpy = view.getPosition().y;
+            float vsx = 1, vpx = 0, vsy = 1, vpy = 0;
+            try {
+                g.drawImage(image, (int) (w / 2 - w * vsx / 2 + vpx), (int) (h / 2 - h * vsy / 2 + vpy), (int) (w * vsx), (int) (h * vsy), null);
+            } catch (NullPointerException ignore) {
+            }
+        }
+         /*if(!started) {
              g.setColor(java.awt.Color.WHITE);
              g.fillRect(0, 0, w, h);
              g.drawImage(yieldImage, getWidth() / 2 - yieldImage.getWidth() / 2, getHeight() / 2 - yieldImage.getHeight() / 2, null);
-         }
-         g.dispose();
-         Toolkit.getDefaultToolkit().sync();
-         last = System.currentTimeMillis();
-         rendering = false;
-     }*/
-    public void render() {
+         }*/
+        g.setColor(java.awt.Color.RED);
+        g.fillRect(x, 0, 100, 100);
+        g.dispose();
+        Toolkit.getDefaultToolkit().sync();
+        last = System.currentTimeMillis();
+        threadTask.execute();
+    }
+    /*public void render() {
         BufferStrategy bs = getBufferStrategy();
         if (bs == null) {
             try {
@@ -590,9 +574,14 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
         int w = frame.getWidth() - frame.getInsets().right - frame.getInsets().left,
                 h = frame.getHeight() - frame.getInsets().top - frame.getInsets().bottom;
         g.fillRect(0, 0, w, h);
+        this.g = g;
+        if (defTransform == null)
+            defTransform = ((Graphics2D) this.g).getTransform();
+        this.g.setColor(toAWTColor(view.getBgColor()));
+        this.g.fillRect(0, 0, view.getWidth(), view.getHeight());
         if (view != null) {
             started = true;
-            g.rotate(Math.toRadians(view.getTransform().rotation) * -1, w / 2f, h / 2f);
+            //g.rotate(Math.toRadians(view.getTransform().rotation) * -1, w / 2f, h / 2f);
             float vsx = view.getTransform().scale.x, vpx = view.getPosition().x, vsy = view.getTransform().scale.y, vpy = view.getPosition().y;
             try {
                 g.drawImage(image, (int) (w / 2 - w * vsx / 2 + vpx), (int) (h / 2 - h * vsy / 2 + vpy), (int) (w * vsx), (int) (h * vsy), null);
@@ -603,34 +592,15 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
             g.setColor(java.awt.Color.WHITE);
             g.fillRect(0, 0, w, h);
             g.drawImage(yieldImage, getWidth() / 2 - yieldImage.getWidth() / 2, getHeight() / 2 - yieldImage.getHeight() / 2, null);
-        }*/
+        }*//*
         g.dispose();
         bs.show();
         Toolkit.getDefaultToolkit().sync();
         last = System.currentTimeMillis();
-    }
+    }*/
 
     @Override
-    public void frameStart(SampleGraphics g) {
-        intFrame++;
-        reloadGraphics();
-    }
-
-    public void reloadGraphics() {
-        if (image != null) {
-            this.g = image.getGraphics();
-            if (defTransform == null)
-                defTransform = ((Graphics2D) this.g).getTransform();
-            this.g.setColor(toAWTColor(view.getBgColor()));
-            this.g.fillRect(0, 0, view.getWidth(), view.getHeight());
-        }
-    }
-
-    private int intFrame;
-
-    @Override
-    public void frameEnd(View view) {
-        this.view = view;
+    public void frameEnd(Color backgroundColor) {
         Yld.debug(() -> {
             if (!frame.getTitle().endsWith(" (DEBUG)"))
                 frame.setTitle(frame.getTitle() + " (DEBUG)");
@@ -639,11 +609,9 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
             if (frame.getTitle().endsWith(" (DEBUG)"))
                 frame.setTitle(frame.getTitle().substring(0, " (DEBUG)".length()));
         });
+        repaint();
         if (g != null)
             g.dispose();
-        if (intFrame % renderMod == 0) {
-            render();
-        }
     }
 
     @Override
@@ -656,18 +624,12 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
         gi.setColor(java.awt.Color.BLACK);
         gi.fillRect(0, 0, image.getWidth(null), image.getHeight(null));
         gi.dispose();
-        reloadGraphics();
         //image = new BufferedImage(view.getWidth(), view.getHeight(), BufferedImage.TYPE_INT_ARGB);
     }
 
     @Override
     public float fpsCount() {
         return fps;
-    }
-
-    @Override
-    public void close() {
-
     }
 
     @Override
@@ -715,16 +677,24 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
         xyg.drawImage(image, width, height, -width, -height, this);
         xyg.dispose();
         Texture invX = new Texture(""), invY = new Texture(""), invXY = new Texture("");
-        images.put(invX.getTextureID(), imageX);
-        images.put(invY.getTextureID(), imageY);
-        images.put(invXY.getTextureID(), imageXY);
-        invX.setVisualUtils(this);
+        invX.setWidth(imageX.getWidth(null));
+        invX.setHeight(imageX.getHeight(null));
+        invX.setSpecificImage(imageX);
+        invY.setWidth(imageY.getWidth(null));
+        invY.setHeight(imageY.getHeight(null));
+        invY.setSpecificImage(imageY);
+        invXY.setWidth(imageXY.getWidth(null));
+        invXY.setHeight(imageXY.getHeight(null));
+        invXY.setSpecificImage(imageXY);
+        invXY.setVisualUtils(this);
         invY.setVisualUtils(this);
         invXY.setVisualUtils(this);
         texture.setInvertedX(invX);
         texture.setInvertedY(invY);
         texture.setInvertedXY(invXY);
-        images.put(texture.getTextureID(), image);
+        texture.setWidth(width);
+        texture.setHeight(height);
+        texture.setSpecificImage(image);
         texture.setVisualUtils(this);
         if (texture.isFlushAfterLoad())
             texture.flush();
@@ -732,7 +702,7 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
 
     @Override
     public void setPixel(Texture texture, Color color, Vector2 position) {
-        Image i = images.get(texture.getTextureID());
+        Image i = (Image) texture.getSpecificImage();
         if (i instanceof BufferedImage) {
             BufferedImage img = (BufferedImage) i;
             try {
@@ -746,26 +716,27 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
 
     @Override
     public void unloadTexture(Texture texture) {
-        images.get(texture.getTextureID()).flush();
-        images.remove(texture.getTextureID());
+        ((Image) texture.getSpecificImage()).flush();
     }
 
     @Override
     public void unloadAllTextures() {
-        for (Image img : images.values()) {
+
+        //AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+        //AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+        //AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+        /*for (Image img : images.values()) {
             if (img != null)
                 img.flush();
-        }
-        while (!images.isEmpty())
-            images.clear();
+        }*/
     }
 
     @Override
     public void clearTexture(Texture texture) {
         if (accelerateTextures) {
-            images.replace(texture.getTextureID(), gc.createCompatibleImage(texture.getWidth(), texture.getHeight(), Transparency.TRANSLUCENT));
+            texture.setSpecificImage(gc.createCompatibleImage(texture.getWidth(), texture.getHeight(), Transparency.TRANSLUCENT));
         } else {
-            images.replace(texture.getTextureID(), new BufferedImage(texture.getWidth(), texture.getHeight(), BufferedImage.TYPE_INT_ARGB));
+            texture.setSpecificImage(new BufferedImage(texture.getWidth(), texture.getHeight(), BufferedImage.TYPE_INT_ARGB));
         }
     }
 
@@ -786,13 +757,13 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
     @Override
     public Texture cutTexture(Texture texture, int x, int y, int width, int height) {
         Texture tex;
-        Image img = images.get(texture.getTextureID());
+        Image img = (Image) texture.getSpecificImage();
         if (img instanceof BufferedImage) {
             img = ((BufferedImage) img).getSubimage(x, y, width, height);
         } else {
             img = gc.createCompatibleVolatileImage(width, height, Transparency.TRANSLUCENT);
             Graphics g = img.getGraphics();
-            g.drawImage(images.get(texture.getTextureID()), -x, -y, null);
+            g.drawImage((Image) texture.getSpecificImage(), -x, -y, null);
             g.dispose();
         }
         tex = new Texture((String) null);
@@ -803,14 +774,13 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
     @Override
     public Texture scaleTexture(Texture texture, int width, int height) {
         Texture tex = new Texture((String) null);
-        loadTexture(tex, images.get(tex.getTextureID()).getScaledInstance(width, height, Image.SCALE_DEFAULT), 0, 0);
+        loadTexture(tex, ((Image) texture.getSpecificImage()).getScaledInstance(width, height, Image.SCALE_DEFAULT), 0, 0);
         return tex;
     }
 
     @Override
     public Color[][] getTextureColors(Texture texture) {
-
-        Image image1 = images.get(texture.getTextureID());
+        Image image1 = (Image) texture.getSpecificImage();
         if (image1 instanceof BufferedImage) {
             BufferedImage image2 = (BufferedImage) image1;
             Color[][] pixels = new Color[image2.getWidth()][image2.getHeight()];
@@ -829,7 +799,7 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
 
     @Override
     public void setTextureColors(Texture texture, Color[][] colors) {
-        Image image1 = images.get(texture.getTextureID());
+        Image image1 = (Image) texture.getSpecificImage();
         if (image1 instanceof BufferedImage) {
             BufferedImage img = (BufferedImage) image1;
             for (int x = 0; x < colors.length; x++) {
@@ -846,22 +816,6 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
         return swingYield;
     }
 
-    public float getRenderMod() {
-        return renderMod;
-    }
-
-    public void setRenderMod(float renderMod) {
-        this.renderMod = renderMod;
-    }
-
-    public int getIntFrame() {
-        return intFrame;
-    }
-
-    public void setIntFrame(int intFrame) {
-        this.intFrame = intFrame;
-    }
-
     @Override
     public void unloadFont(String fontName) {
         fonts.remove(fontName);
@@ -872,24 +826,38 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
         return pressing;
     }
 
-    @Override
-    public int getTextureWidth(int textureId) {
-        return images.get(textureId).getWidth(null);
-    }
+    /* @Override
+     public int mouseX() {
+         return Yld.clamp(8 + (int) (((float) MouseInfo.getPointerInfo().getLocation().x - frame.getInsets().left - frame.getInsets().right - frame.getX()) / (float) getWidth() * (float) view.getWidth()), 0, view.getWidth());
+     }
 
-    @Override
-    public int getTextureHeight(int textureId) {
-        return images.get(textureId).getHeight(null);
-    }
-
+     @Override
+     public int mouseY() {
+         return Yld.clamp(8 + (int) (((float) MouseInfo.getPointerInfo().getLocation().y - frame.getInsets().top - frame.getInsets().bottom - frame.getY()) / (float) getHeight() * (float) view.getHeight()), 0, view.getHeight());
+     }*/
     @Override
     public int mouseX() {
-        return Yld.clamp((int) (((float) MouseInfo.getPointerInfo().getLocation().x - frame.getInsets().left - frame.getInsets().right - frame.getX()) / (float) getWidth() * (float) view.getWidth()), 0, view.getWidth());
+        return 0;
     }
 
     @Override
     public int mouseY() {
-        return Yld.clamp((int) (((float) MouseInfo.getPointerInfo().getLocation().y - frame.getInsets().top - frame.getInsets().bottom - frame.getY()) / (float) getHeight() * (float) view.getHeight()), 0, view.getHeight());
+        return 0;
+    }
+
+    @Override
+    public void setThreadTask(YldTask threadTask) {
+        this.threadTask = threadTask;
+    }
+
+    @Override
+    public float getStringWidth(String s, String s1) {
+        return (float) fonts.get(s1).getStringBounds(s, frc).getWidth();
+    }
+
+    @Override
+    public float getStringHeight(String s, String s1) {
+        return (float) fonts.get(s1).getStringBounds(s, frc).getHeight();
     }
 
     @Override
@@ -920,7 +888,7 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
 
     @Override
     public boolean canStart() {
-        return started;
+        return true;
     }
 
     public Graphics getG() {
@@ -931,32 +899,12 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
         this.g = g;
     }
 
-    public HashMap<Integer, Image> getImages() {
-        return images;
-    }
-
-    public void setImages(HashMap<Integer, Image> images) {
-        this.images = images;
-    }
-
     public HashMap<String, Font> getFonts() {
         return fonts;
     }
 
     public void setFonts(HashMap<String, Font> fonts) {
         this.fonts = fonts;
-    }
-
-    public static BufferedImage getYieldImage() {
-        return yieldImage;
-    }
-
-    public boolean isStarted() {
-        return started;
-    }
-
-    public void setStarted(boolean started) {
-        this.started = started;
     }
 
     public JFrame getFrame() {
@@ -967,28 +915,12 @@ public class SwingYield extends Canvas implements RenderMaster, KeyListener, Mou
         this.frame = frame;
     }
 
-    public AffineTransform getDefTransform() {
-        return defTransform;
-    }
-
-    public void setDefTransform(AffineTransform defTransform) {
-        this.defTransform = defTransform;
-    }
-
     public Image getImage() {
         return image;
     }
 
     public void setImage(Image image) {
         this.image = image;
-    }
-
-    public View getView() {
-        return view;
-    }
-
-    public void setView(View view) {
-        this.view = view;
     }
 
     @Override
