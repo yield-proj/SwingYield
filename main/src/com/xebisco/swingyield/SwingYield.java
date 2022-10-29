@@ -51,7 +51,7 @@ public class SwingYield extends JPanel implements RenderMaster, KeyListener, Mou
 
     public boolean accelerateTextures;
 
-    private TreeSet<Renderable> renderables;
+    private Set<Renderable> renderables;
     private double savedRotation;
 
     private final SwingYield swingYield;
@@ -64,6 +64,8 @@ public class SwingYield extends JPanel implements RenderMaster, KeyListener, Mou
     private final Set<Integer> pressing = new HashSet<>();
     private HashMap<Integer, Clip> clips = new HashMap<>();
     private HashMap<String, Font> fonts = new HashMap<>();
+
+    private Color backgroundColor;
     private float fps;
 
     private static final GraphicsConfiguration gc = GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice().getDefaultConfiguration();
@@ -88,8 +90,12 @@ public class SwingYield extends JPanel implements RenderMaster, KeyListener, Mou
     }
 
     @Override
-    public void start(TreeSet<Renderable> renderables) {
+    public void start(Set<Renderable> renderables) {
         this.renderables = renderables;
+        System.setProperty("sun.java2d.opengl", "True");
+        System.setProperty("sun.java2d.d3d", "False");
+        System.setProperty("sun.java2d.pmoffscreen", "False");
+        System.setProperty("sun.java2d.noddraw", "True");
     }
 
     @Override
@@ -361,7 +367,7 @@ public class SwingYield extends JPanel implements RenderMaster, KeyListener, Mou
     @Override
     public void unloadAllPlayers() {
         for (Clip clip : clips.values()) {
-            Yld.debug(() -> Yld.log("Flushed: " + clip));
+            Yld.debug(() -> Yld.getDebugLogger().log("Flushed: " + clip));
             if (clip != null) {
                 if (clip.isOpen()) {
                     clip.close();
@@ -471,8 +477,8 @@ public class SwingYield extends JPanel implements RenderMaster, KeyListener, Mou
             frame.setSize(configuration.width + frame.getInsets().right + frame.getInsets().left, configuration.height + frame.getInsets().top + frame.getInsets().bottom);
         }
         frame.setLocationRelativeTo(null);
-        addKeyListener(this);
-        // addMouseListener(this);
+        frame.addKeyListener(this);
+        frame.addMouseListener(this);
         if (configuration.hideMouse) {
             Cursor cursor = Toolkit.getDefaultToolkit().createCustomCursor(new ImageIcon(Objects.requireNonNull(Yld.class.getResource("assets/none.png"))).getImage(), new Point(), "none");
             frame.setCursor(cursor);
@@ -480,11 +486,8 @@ public class SwingYield extends JPanel implements RenderMaster, KeyListener, Mou
         changeWindowIcon(configuration.icon);
     }
 
-    int x;
-
     @Override
     protected void paintComponent(Graphics g) {
-        x++;
         actual = System.currentTimeMillis();
         fps = 1000 / (float) (actual - last);
         g.setColor(java.awt.Color.BLACK);
@@ -492,14 +495,16 @@ public class SwingYield extends JPanel implements RenderMaster, KeyListener, Mou
                 h = frame.getHeight() - frame.getInsets().top - frame.getInsets().bottom;
         g.fillRect(0, 0, w, h);
         if (image != null) {
-            Yld.log(renderables.size());
             Graphics2D g2 = (Graphics2D) image.getGraphics();
+            g2.setColor(toAWTColor(backgroundColor));
+            g2.fillRect(0, 0, image.getWidth(null), image.getHeight(null));
             for (Renderable renderable : renderables) {
                 if (renderable.getType() != RenderableType.IMAGE) {
                     if (renderable.getSpecificColor() == null)
                         renderable.setSpecificColor(toAWTColor(renderable.getColor()));
                     g2.setColor((java.awt.Color) renderable.getSpecificColor());
                 }
+                g2.setTransform((AffineTransform) affinetransform.clone());
                 g2.rotate(Math.toRadians(-renderable.getRotation()), renderable.getX(), renderable.getY());
                 switch (renderable.getType()) {
                     case LINE:
@@ -519,7 +524,7 @@ public class SwingYield extends JPanel implements RenderMaster, KeyListener, Mou
                             g2.fillOval(renderable.getX() - renderable.getWidth() / 2, renderable.getY() - renderable.getHeight() / 2, renderable.getWidth(), renderable.getHeight());
                         else {
                             g2.setStroke(new BasicStroke(renderable.getThickness()));
-                            g2.drawRect(renderable.getX() - renderable.getWidth() / 2, renderable.getY() - renderable.getHeight() / 2, renderable.getWidth(), renderable.getHeight());
+                            g2.drawOval(renderable.getX() - renderable.getWidth() / 2, renderable.getY() - renderable.getHeight() / 2, renderable.getWidth(), renderable.getHeight());
                         }
                         break;
                     case ROUNDED_RECTANGLE:
@@ -532,6 +537,11 @@ public class SwingYield extends JPanel implements RenderMaster, KeyListener, Mou
                         break;
                     case IMAGE:
                         g2.drawImage((Image) renderable.getSpecific(), renderable.getX() - renderable.getWidth() / 2, renderable.getY() - renderable.getHeight() / 2, renderable.getWidth(), renderable.getHeight(), null);
+                        break;
+                    case TEXT:
+                        String[] ss = renderable.getSpecific().toString().split("\1");
+                        g2.setFont(fonts.get(ss[1]));
+                        g2.drawString(ss[0], renderable.getX() - getStringWidth(ss[0], ss[1]) / 2f, renderable.getY() + getStringHeight(ss[0], ss[1]) / 4f);
                         break;
                 }
             }
@@ -549,8 +559,6 @@ public class SwingYield extends JPanel implements RenderMaster, KeyListener, Mou
              g.fillRect(0, 0, w, h);
              g.drawImage(yieldImage, getWidth() / 2 - yieldImage.getWidth() / 2, getHeight() / 2 - yieldImage.getHeight() / 2, null);
          }*/
-        g.setColor(java.awt.Color.RED);
-        g.fillRect(x, 0, 100, 100);
         g.dispose();
         Toolkit.getDefaultToolkit().sync();
         last = System.currentTimeMillis();
@@ -601,6 +609,7 @@ public class SwingYield extends JPanel implements RenderMaster, KeyListener, Mou
 
     @Override
     public void frameEnd(Color backgroundColor) {
+        this.backgroundColor = backgroundColor;
         Yld.debug(() -> {
             if (!frame.getTitle().endsWith(" (DEBUG)"))
                 frame.setTitle(frame.getTitle() + " (DEBUG)");
