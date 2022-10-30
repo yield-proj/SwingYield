@@ -49,6 +49,8 @@ public class SwingYield extends JPanel implements RenderMaster, KeyListener, Mou
 
     private JFrame frame;
 
+    private int x, y, width, height;
+
     public boolean accelerateTextures;
 
     private Set<Renderable> renderables;
@@ -66,7 +68,7 @@ public class SwingYield extends JPanel implements RenderMaster, KeyListener, Mou
     private HashMap<String, Font> fonts = new HashMap<>();
 
     private Color backgroundColor;
-    private float fps;
+    private float fps, sx, sy;
 
     private static final GraphicsConfiguration gc = GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice().getDefaultConfiguration();
     private long last, actual;
@@ -547,8 +549,8 @@ public class SwingYield extends JPanel implements RenderMaster, KeyListener, Mou
             }
             g2.dispose();
             //g2.rotate(Math.toRadians(view.getTransform().rotation) * -1, w / 2f, h / 2f);
-            //float vsx = view.getTransform().scale.x, vpx = view.getPosition().x, vsy = view.getTransform().scale.y, vpy = view.getPosition().y;
-            float vsx = 1, vpx = 0, vsy = 1, vpy = 0;
+            float vsx = sx, vpx = x, vsy = sy, vpy = y;
+            //float vsx = 1, vpx = 0, vsy = 1, vpy = 0;
             try {
                 g.drawImage(image, (int) (w / 2 - w * vsx / 2 + vpx), (int) (h / 2 - h * vsy / 2 + vpy), (int) (w * vsx), (int) (h * vsy), null);
             } catch (NullPointerException ignore) {
@@ -608,7 +610,13 @@ public class SwingYield extends JPanel implements RenderMaster, KeyListener, Mou
     }*/
 
     @Override
-    public void frameEnd(Color backgroundColor) {
+    public void frameEnd(Color backgroundColor, int width, int height, int x, int y, float sx, float sy) {
+        this.width = width;
+        this.height = height;
+        this.x = x;
+        this.y = y;
+        this.sx = sx;
+        this.sy = sy;
         this.backgroundColor = backgroundColor;
         Yld.debug(() -> {
             if (!frame.getTitle().endsWith(" (DEBUG)"))
@@ -835,24 +843,15 @@ public class SwingYield extends JPanel implements RenderMaster, KeyListener, Mou
         return pressing;
     }
 
-    /* @Override
+     @Override
      public int mouseX() {
-         return Yld.clamp(8 + (int) (((float) MouseInfo.getPointerInfo().getLocation().x - frame.getInsets().left - frame.getInsets().right - frame.getX()) / (float) getWidth() * (float) view.getWidth()), 0, view.getWidth());
+         return Yld.clamp(8 + (int) (((float) MouseInfo.getPointerInfo().getLocation().x - frame.getInsets().left - frame.getInsets().right - frame.getX()) / (float) getWidth() * (float) width), 0, width);
      }
 
      @Override
      public int mouseY() {
-         return Yld.clamp(8 + (int) (((float) MouseInfo.getPointerInfo().getLocation().y - frame.getInsets().top - frame.getInsets().bottom - frame.getY()) / (float) getHeight() * (float) view.getHeight()), 0, view.getHeight());
-     }*/
-    @Override
-    public int mouseX() {
-        return 0;
-    }
-
-    @Override
-    public int mouseY() {
-        return 0;
-    }
+         return Yld.clamp(8 + (int) (((float) MouseInfo.getPointerInfo().getLocation().y - frame.getInsets().top - frame.getInsets().bottom - frame.getY()) / (float) getHeight() * (float) height), 0, height);
+     }
 
     @Override
     public void setThreadTask(YldTask threadTask) {
