@@ -1018,4 +1018,92 @@ public class SwingYield extends JPanel implements RenderMaster, KeyListener, Mou
     public void setAccelerateTextures(boolean accelerateTextures) {
         this.accelerateTextures = accelerateTextures;
     }
+
+    @Override
+    public int getX() {
+        return x;
+    }
+
+    public void setX(int x) {
+        this.x = x;
+    }
+
+    @Override
+    public int getY() {
+        return y;
+    }
+
+    public void setY(int y) {
+        this.y = y;
+    }
+
+    @Override
+    public int getWidth() {
+        return width;
+    }
+
+    public void setWidth(int width) {
+        this.width = width;
+    }
+
+    @Override
+    public int getHeight() {
+        return height;
+    }
+
+    public void setHeight(int height) {
+        this.height = height;
+    }
+
+    public Set<Renderable> getRenderables() {
+        return renderables;
+    }
+
+    public void setRenderables(Set<Renderable> renderables) {
+        this.renderables = renderables;
+    }
+
+    public YldTask getThreadTask() {
+        return threadTask;
+    }
+
+    public Color getBackgroundColor() {
+        return backgroundColor;
+    }
+
+    public void setBackgroundColor(Color backgroundColor) {
+        this.backgroundColor = backgroundColor;
+    }
+
+    public float getSx() {
+        return sx;
+    }
+
+    public void setSx(float sx) {
+        this.sx = sx;
+    }
+
+    public float getSy() {
+        return sy;
+    }
+
+    public void setSy(float sy) {
+        this.sy = sy;
+    }
+
+    public AffineTransform getAffinetransform() {
+        return affinetransform;
+    }
+
+    public void setAffinetransform(AffineTransform affinetransform) {
+        this.affinetransform = affinetransform;
+    }
+
+    public FontRenderContext getFrc() {
+        return frc;
+    }
+
+    public void setFrc(FontRenderContext frc) {
+        this.frc = frc;
+    }
 }
