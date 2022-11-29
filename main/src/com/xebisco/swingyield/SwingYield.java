@@ -35,6 +35,7 @@ import java.awt.event.MouseListener;
 import java.awt.font.FontRenderContext;
 import java.awt.geom.AffineTransform;
 import java.awt.image.BufferedImage;
+import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.HashMap;
@@ -107,149 +108,6 @@ public class SwingYield extends JPanel implements RenderMaster, KeyListener, Mou
         return t;
     }
 
-    /*public class SwingGraphics implements SampleGraphics {
-        @Override
-        public void setRotation(Vector2 point, float angle) {
-            ((Graphics2D) g).setTransform(defTransform);
-            savedRotation = Math.toRadians(-angle);
-            savedRotationPoint = point;
-            ((Graphics2D) g).rotate(savedRotation, point.x, point.y);
-        }
-
-        @Override
-        public void drawLine(Vector2 point1, Vector2 point2, Color color) {
-            g.setColor(toAWTColor(color));
-            g.drawLine((int) point1.x, (int) point1.y, (int) point2.x, (int) point2.y);
-        }
-
-        @Override
-        public void drawRect(Vector2 pos, Vector2 size, Color color, boolean filled) {
-            g.setColor(toAWTColor(color));
-            if (pos.x - size.x < view.getWidth() &&
-                    pos.x + size.x > 0 &&
-                    pos.y - size.y < view.getHeight() &&
-                    pos.y + size.y > 0)
-                if (filled) {
-                    g.fillRect((int) (pos.x - size.x / 2), (int) (pos.y - size.y / 2), (int) size.x, (int) size.y);
-                } else {
-                    g.drawRect((int) (pos.x - size.x / 2), (int) (pos.y - size.y / 2), (int) size.x, (int) size.y);
-                }
-        }
-
-        @Override
-        public void drawRoundRect(Vector2 pos, Vector2 size, Color color, boolean filled, int arcWidth, int arcHeight) {
-            g.setColor(toAWTColor(color));
-            if (pos.x - size.x < view.getWidth() &&
-                    pos.x + size.x > 0 &&
-                    pos.y - size.y < view.getHeight() &&
-                    pos.y + size.y > 0)
-                if (filled) {
-                    g.fillRoundRect((int) (pos.x - size.x / 2), (int) (pos.y - size.y / 2), (int) size.x, (int) size.y, arcWidth, arcHeight);
-                } else {
-                    g.drawRoundRect((int) (pos.x - size.x / 2), (int) (pos.y - size.y / 2), (int) size.x, (int) size.y, arcWidth, arcHeight);
-                }
-        }
-
-        @Override
-        public void drawOval(Vector2 pos, Vector2 size, Color color, boolean filled) {
-            g.setColor(toAWTColor(color));
-            if (pos.x - size.x < view.getWidth() &&
-                    pos.x + size.x > 0 &&
-                    pos.y - size.y < view.getHeight() &&
-                    pos.y + size.y > 0)
-                if (filled) {
-                    g.fillOval((int) (pos.x - size.x / 2), (int) (pos.y - size.y / 2), (int) size.x, (int) size.y);
-                } else {
-                    g.drawOval((int) (pos.x - size.x / 2), (int) (pos.y - size.y / 2), (int) size.x, (int) size.y);
-                }
-        }
-
-        @Override
-        public void drawArc(Vector2 pos, Vector2 size, Color color, boolean filled, int startAngle, int arcAngle) {
-            g.setColor(toAWTColor(color));
-            if (pos.x - size.x < view.getWidth() &&
-                    pos.x + size.x > 0 &&
-                    pos.y - size.y < view.getHeight() &&
-                    pos.y + size.y > 0)
-                if (filled) {
-                    g.fillArc((int) pos.x, (int) pos.y, (int) size.x, (int) size.y, startAngle, arcAngle);
-                } else {
-                    g.drawArc((int) pos.x, (int) pos.y, (int) size.x, (int) size.y, startAngle, arcAngle);
-                }
-        }
-
-        @Override
-        public void drawString(String str, Color color, Vector2 pos, Vector2 scale, String fontName) {
-            g.setColor(toAWTColor(color));
-            setFont(fontName);
-            AffineTransform af = new AffineTransform();
-            af.concatenate(AffineTransform.getScaleInstance(scale.x, scale.y));
-            ((Graphics2D) g).setTransform(af);
-            ((Graphics2D) g).rotate(savedRotation, savedRotationPoint.x, savedRotationPoint.y);
-            af = null;
-
-            g.drawString(str, (int) (pos.x - getStringWidth(str) / 2), (int) (pos.y + (getStringHeight(str) / 4)));
-            ((Graphics2D) g).setTransform(defTransform);
-        }
-
-        @Override
-        public void drawTexture(Texture texture, Vector2 pos, Vector2 size) {
-            Image image = images.get(texture.getTextureID());
-            if (pos.x - size.x < view.getWidth() &&
-                    pos.x + size.x > 0 &&
-                    pos.y - size.y < view.getHeight() &&
-                    pos.y + size.y > 0)
-                g.drawImage(image, (int) (pos.x - size.x / 2), (int) (pos.y - size.y / 2), (int) size.x, (int) size.y, null);
-        }
-
-        @Override
-        public void setFilter(Filter filter) {
-            if (filter == Filter.LINEAR) {
-                ((Graphics2D) g).setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            } else if (filter == Filter.NEAREST) {
-                ((Graphics2D) g).setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
-            }
-        }
-
-        @Override
-        public void setFont(String fontName) {
-            g.setFont(fonts.get(fontName));
-        }
-
-        @Override
-        public float getStringWidth(String str) {
-            return g.getFontMetrics().stringWidth(str);
-        }
-
-        @Override
-        public float getStringWidth(String str, String font) {
-            return g.getFontMetrics(fonts.get(font)).stringWidth(str);
-        }
-
-        @Override
-        public float getStringHeight(String str) {
-            return (float) g.getFontMetrics().getStringBounds(str, g).getHeight();
-        }
-
-        @Override
-        public float getStringHeight(String str, String font) {
-            return (float) g.getFontMetrics(fonts.get(font)).getStringBounds(str, g).getHeight();
-        }
-
-        @Override
-        public void custom(String instruction, Object... args) {
-            Class<?>[] types = new Class<?>[args.length];
-            for (int i = 0; i < types.length; i++) {
-                types[i] = args[i].getClass();
-            }
-            try {
-                SwingYield.class.getDeclaredMethod(instruction, types).invoke(swingYield, args);
-            } catch (IllegalAccessException | InvocationTargetException | NoSuchMethodException e) {
-                throw new RuntimeException(e);
-            }
-        }
-    }*/
-
     @Override
     public Texture duplicate(Texture texture) {
         Texture t = new Texture(texture.getCachedPath());
@@ -268,11 +126,6 @@ public class SwingYield extends JPanel implements RenderMaster, KeyListener, Mou
         g.dispose();
         return tex;
     }
-
-    /*public void drawTexture(Texture texture, Vector2 pos, Vector2 size) {
-        Image image = (Image) texture.getSpecificImage();
-        g.drawImage(image, (int) (pos.x), (int) (pos.y), (int) size.x, (int) size.y, null);
-    }*/
 
     public void changeWindowIcon(Texture icon) {
         Image i = (Image) icon.getSpecificImage();
@@ -411,9 +264,12 @@ public class SwingYield extends JPanel implements RenderMaster, KeyListener, Mou
     public void loadAudioClip(AudioClip audioClip, AudioPlayer audioPlayer) {
         try {
             Clip clip = clips.get(audioPlayer.getPlayerID());
-            AudioInputStream inputStream = AudioSystem.getAudioInputStream(audioClip.getInputStream());
+            BufferedInputStream bufferedInputStream = new BufferedInputStream(audioClip.getInputStream());
+            AudioInputStream inputStream = AudioSystem.getAudioInputStream(bufferedInputStream);
             clip.close();
             clip.open(inputStream);
+            bufferedInputStream.close();
+            inputStream.close();
             if (audioClip.isFlushAfterLoad())
                 audioClip.flush();
         } catch (IOException | UnsupportedAudioFileException | LineUnavailableException e) {
